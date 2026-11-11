@@ -4,6 +4,7 @@ import { epley1RM, lastPerformance, exerciseHistory, computeRecords } from './st
 import { parseHevyCsv, parseHevyDate, importHevyWorkouts } from './hevy'
 import { createBackup, restoreBackup } from './backup'
 import { EXERCISE_POOL, findPoolEntry, matchesQuery } from '../data/exercisePool'
+import { routineCandidates, createRoutines } from './routinesFromHistory'
 import { startWorkout, finishWorkout, addExerciseToWorkout, getActiveWorkout, differsFromRoutine, removeSet, suggestRoutineSets } from './workout'
 
 let n = 0
@@ -209,6 +210,33 @@ describe('Trainingsablauf', () => {
     const sets = (await db.sets.where('workoutId').equals(wid).toArray()).sort((x, y) => x.setIndex - y.setIndex)
     await removeSet(sets[0].id, db)
     expect((await db.sets.where('workoutId').equals(wid).toArray()).map((s) => s.setIndex).sort()).toEqual([0, 1])
+  })
+})
+
+describe('Routinen aus dem Verlauf', () => {
+  it('gruppiert Trainings nach Namen und übernimmt das letzte Training als Vorlage', async () => {
+    await importHevyWorkouts(parseHevyCsv(HEVY_CSV).workouts, db)
+    const bench = (await db.exercises.where('name').equals('Bankdrücken (Langhantel)').first())!
+    let cands = await routineCandidates(120, db)
+    expect(cands).toHaveLength(1)
+    expect(cands[0]).toMatchObject({ name: 'Push', count: 2, exists: false })
+    // letztes "Push" (22. März): nur Bankdrücken, 1 Arbeitssatz
+    expect(cands[0].items).toEqual([{ exerciseId: bench.id, sets: [{ weight: 82.5, reps: 6 }], restSeconds: 120 }])
+
+    expect(await createRoutines(cands, db)).toBe(1)
+    expect((await db.routines.toArray()).map((r) => r.name)).toEqual(['Push'])
+    // zweites Mal: existiert schon → wird markiert und nicht doppelt angelegt
+    cands = await routineCandidates(120, db)
+    expect(cands[0].exists).toBe(true)
+    expect(await createRoutines(cands, db)).toBe(0)
+    expect(await db.routines.count()).toBe(1)
+  })
+
+  it('ignoriert laufende Trainings und Trainings ohne erledigte Sätze', async () => {
+    const a = await getOrCreateExercise('Kniebeuge', db)
+    const wid = await startWorkout(undefined, db)
+    await addExerciseToWorkout(wid, a, db)
+    expect(await routineCandidates(90, db)).toEqual([])
   })
 })
 

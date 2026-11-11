@@ -52,7 +52,7 @@ export default function SettingsPage() {
     setHevyPreview(null)
     setMessage({
       section: 'hevy',
-      text: `${r.workoutsAdded} Trainings mit ${r.setsAdded} Sätzen importiert, ${r.exercisesCreated} neue Übungen.${r.duplicatesSkipped ? ` ${r.duplicatesSkipped} waren schon vorhanden.` : ''}`,
+      text: `${r.workoutsAdded} Trainings mit ${r.setsAdded} Sätzen importiert, ${r.exercisesCreated} neue Übungen.${r.duplicatesSkipped ? ` ${r.duplicatesSkipped} waren schon vorhanden.` : ''} Unter „Training“ kannst du daraus Routinen erstellen.`,
     })
   }
 

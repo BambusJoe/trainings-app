@@ -1215,3 +1215,14 @@ html {
 .notice {
   font-size: 0.9rem;
 }
+
+.routine-from-history {
+  align-self: center;
+  color: var(--muted);
+}
+.pick-title {
+  font-weight: 650;
+}
+.pick-row:disabled {
+  opacity: 0.55;
+}

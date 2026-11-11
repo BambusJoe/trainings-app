@@ -7,20 +7,34 @@ import { startWorkout } from '../logic/workout'
 import { fmtRelative } from '../format'
 import { Dialog } from '../components/Dialog'
 import { Icon } from '../components/Icon'
+import { RoutinesFromHistory } from '../components/RoutinesFromHistory'
 
 export default function StartPage() {
   const navigate = useNavigate()
   const active = useActiveWorkout()
   const exercises = useExerciseMap()
   const routines = useLiveQuery(() => db.routines.orderBy('sortOrder').toArray(), [], [])
-  const lastByRoutine = useLiveQuery(async () => {
-    const m = new Map<number, number>()
-    await db.workouts.each((w) => {
-      if (w.routineId !== undefined && w.finishedAt && w.startedAt > (m.get(w.routineId) ?? 0)) m.set(w.routineId, w.startedAt)
-    })
-    return m
-  }, [], new Map<number, number>())
+  // Letztes Training je Routine – per Routine-ID oder (z. B. bei Hevy-Importen) per gleichem Namen
+  const history = useLiveQuery(
+    async () => {
+      const byId = new Map<number, number>()
+      const byName = new Map<string, number>()
+      let finished = 0
+      await db.workouts.each((w) => {
+        if (!w.finishedAt) return
+        finished++
+        if (w.routineId !== undefined && w.startedAt > (byId.get(w.routineId) ?? 0)) byId.set(w.routineId, w.startedAt)
+        const k = w.name.trim().toLowerCase()
+        if (w.startedAt > (byName.get(k) ?? 0)) byName.set(k, w.startedAt)
+      })
+      return { byId, byName, finished }
+    },
+    [],
+    { byId: new Map<number, number>(), byName: new Map<string, number>(), finished: 0 },
+  )
   const [blocked, setBlocked] = useState(false)
+  const [fromHistory, setFromHistory] = useState(false)
+  const [created, setCreated] = useState<number | null>(null)
 
   async function start(routine?: Routine) {
     if (active) {
@@ -45,17 +59,35 @@ export default function StartPage() {
           </Link>
         </div>
 
+        {created !== null && (
+          <div className="notice" role="status">
+            <span>{created === 0 ? 'Keine neuen Routinen angelegt.' : created === 1 ? '1 Routine angelegt.' : `${created} Routinen angelegt.`} Tippe eine Routine an, um sie anzupassen.</span>
+            <button className="icon-btn" onClick={() => setCreated(null)} aria-label="Hinweis schließen">
+              <Icon name="close" size={18} />
+            </button>
+          </div>
+        )}
+
         {routines.length === 0 && (
           <div className="empty">
             <p>Noch keine Routinen.</p>
-            <p className="muted">Lege z. B. „Push“, „Pull“ und „Beine“ an. Die Anzahl ist nicht begrenzt.</p>
+            {history.finished > 0 ? (
+              <>
+                <p className="muted">Dein Tagebuch hat schon {history.finished} Trainings. Daraus kann ich Routinen mit deinen letzten Gewichten erstellen.</p>
+                <button className="btn btn-primary" onClick={() => setFromHistory(true)}>
+                  Routinen aus Tagebuch erstellen
+                </button>
+              </>
+            ) : (
+              <p className="muted">Lege z. B. „Push“, „Pull“ und „Beine“ an. Die Anzahl ist nicht begrenzt.</p>
+            )}
           </div>
         )}
 
         <ul className="cards">
           {routines.map((r) => {
             const names = r.items.map((i) => exercises.get(i.exerciseId)?.name).filter(Boolean)
-            const last = lastByRoutine.get(r.id)
+            const last = history.byId.get(r.id) ?? history.byName.get(r.name.trim().toLowerCase())
             return (
               <li key={r.id} className="card routine-card">
                 <Link to={`/routine/${r.id}`} className="routine-card-main">
@@ -72,11 +104,27 @@ export default function StartPage() {
             )
           })}
         </ul>
+
+        {routines.length > 0 && history.finished > 0 && (
+          <button className="btn btn-ghost btn-small routine-from-history" onClick={() => setFromHistory(true)}>
+            Weitere Routinen aus Tagebuch erstellen
+          </button>
+        )}
       </section>
 
       <button className="btn btn-block" onClick={() => start()}>
         Leeres Training starten
       </button>
+
+      {fromHistory && (
+        <RoutinesFromHistory
+          onClose={() => setFromHistory(false)}
+          onDone={(n) => {
+            setFromHistory(false)
+            setCreated(n)
+          }}
+        />
+      )}
 
       {blocked && (
         <Dialog
