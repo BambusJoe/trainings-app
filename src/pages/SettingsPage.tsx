@@ -14,7 +14,8 @@ export default function SettingsPage() {
   const lastBackup = useLiveQuery(() => db.settings.get('lastBackup'), [])
   const counts = useLiveQuery(async () => ({ workouts: await db.workouts.count(), exercises: await db.exercises.count(), routines: await db.routines.count() }), [])
   const [persisted, setPersisted] = useState<boolean | null>(null)
-  const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null)
+  const [message, setMessage] = useState<{ section: 'backup' | 'hevy'; text: string; error?: boolean } | null>(null)
+  const [reading, setReading] = useState(false)
   const [hevyPreview, setHevyPreview] = useState<ParseResult | null>(null)
   const [backupPreview, setBackupPreview] = useState<Backup | null>(null)
   const hevyInput = useRef<HTMLInputElement>(null)
@@ -25,21 +26,32 @@ export default function SettingsPage() {
   }, [])
 
   async function onHevyFile(file: File | undefined) {
+    if (hevyInput.current) hevyInput.current.value = ''
     if (!file) return
+    setMessage(null)
+    setReading(true)
     try {
       const result = parseHevyCsv(await file.text())
-      if (result.workouts.length === 0) throw new Error('In der Datei wurden keine Trainings gefunden.')
+      if (result.workouts.length === 0) {
+        throw new Error(
+          result.unreadableDate
+            ? `Das Datum „${result.unreadableDate}“ in der Datei konnte nicht gelesen werden. Schick mir die erste Zeile der CSV, dann ergänze ich das Format.`
+            : 'In der Datei wurden keine Trainings mit Gewicht/Wiederholungen gefunden.',
+        )
+      }
       setHevyPreview(result)
     } catch (e) {
-      setMessage({ text: (e as Error).message, error: true })
+      setMessage({ section: 'hevy', text: `„${file.name}“: ${(e as Error).message}`, error: true })
+    } finally {
+      setReading(false)
     }
-    if (hevyInput.current) hevyInput.current.value = ''
   }
 
   async function doHevyImport() {
     const r = await importHevyWorkouts(hevyPreview!.workouts)
     setHevyPreview(null)
     setMessage({
+      section: 'hevy',
       text: `${r.workoutsAdded} Trainings mit ${r.setsAdded} Sätzen importiert, ${r.exercisesCreated} neue Übungen.${r.duplicatesSkipped ? ` ${r.duplicatesSkipped} waren schon vorhanden.` : ''}`,
     })
   }
@@ -61,26 +73,27 @@ export default function SettingsPage() {
         setTimeout(() => URL.revokeObjectURL(url), 1000)
       }
       await setSetting('lastBackup', Date.now())
-      setMessage({ text: 'Backup erstellt.' })
+      setMessage({ section: 'backup', text: 'Backup erstellt.' })
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') setMessage({ text: `Backup fehlgeschlagen: ${(e as Error).message}`, error: true })
+      if ((e as Error).name !== 'AbortError') setMessage({ section: 'backup', text: `Backup fehlgeschlagen: ${(e as Error).message}`, error: true })
     }
   }
 
   async function onBackupFile(file: File | undefined) {
+    if (backupInput.current) backupInput.current.value = ''
     if (!file) return
+    setMessage(null)
     try {
       setBackupPreview(validateBackup(JSON.parse(await file.text())))
     } catch (e) {
-      setMessage({ text: e instanceof SyntaxError ? 'Die Datei ist kein gültiges Backup.' : (e as Error).message, error: true })
+      setMessage({ section: 'backup', text: e instanceof SyntaxError ? 'Die Datei ist kein gültiges Backup.' : (e as Error).message, error: true })
     }
-    if (backupInput.current) backupInput.current.value = ''
   }
 
   async function doRestore() {
     await restoreBackup(backupPreview)
     setBackupPreview(null)
-    setMessage({ text: 'Backup wiederhergestellt.' })
+    setMessage({ section: 'backup', text: 'Backup wiederhergestellt.' })
   }
 
   const hevyStats = hevyPreview && {
@@ -95,15 +108,6 @@ export default function SettingsPage() {
       <header className="page-head">
         <h1>Mehr</h1>
       </header>
-
-      {message && (
-        <div className={`notice ${message.error ? 'notice-error' : ''}`} role="status">
-          <span>{message.text}</span>
-          <button className="icon-btn" onClick={() => setMessage(null)} aria-label="Hinweis schließen">
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-      )}
 
       <section className="section">
         <h2>Training</h2>
@@ -130,10 +134,18 @@ export default function SettingsPage() {
           <button className="btn btn-primary btn-block" onClick={exportBackup}>
             Backup exportieren
           </button>
-          <button className="btn btn-block" onClick={() => backupInput.current?.click()}>
+          <label className="btn btn-block file-btn">
             Backup wiederherstellen
-          </button>
-          <input ref={backupInput} type="file" accept="application/json,.json" hidden onChange={(e) => onBackupFile(e.target.files?.[0])} />
+            <input ref={backupInput} type="file" className="visually-hidden" onChange={(e) => onBackupFile(e.target.files?.[0])} />
+          </label>
+          {message?.section === 'backup' && (
+            <div className={`notice ${message.error ? 'notice-error' : ''}`} role={message.error ? 'alert' : 'status'}>
+              <span>{message.text}</span>
+              <button className="icon-btn" onClick={() => setMessage(null)} aria-label="Hinweis schließen">
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+          )}
           {persisted === false && <p className="muted small">Tipp: Füge die App zum Home-Bildschirm hinzu, damit iOS die Daten dauerhaft behält.</p>}
         </div>
       </section>
@@ -141,13 +153,27 @@ export default function SettingsPage() {
       <section className="section">
         <h2>Aus Hevy importieren</h2>
         <div className="card stack">
-          <p className="small">
-            In Hevy: <b>Profil → Einstellungen → Daten exportieren</b>. Die CSV-Datei hier auswählen. Bereits importierte Trainings werden übersprungen.
-          </p>
-          <button className="btn btn-block" onClick={() => hevyInput.current?.click()}>
-            Hevy-CSV auswählen
-          </button>
-          <input ref={hevyInput} type="file" accept=".csv,text/csv" hidden onChange={(e) => onHevyFile(e.target.files?.[0])} />
+          <ol className="steps small">
+            <li>
+              In Hevy: <b>Profil → Einstellungen → Daten exportieren</b> und die Trainings als CSV exportieren.
+            </li>
+            <li>
+              Im Teilen-Dialog <b>„In Dateien sichern“</b> wählen.
+            </li>
+            <li>Hier die Datei auswählen. Bereits importierte Trainings werden übersprungen.</li>
+          </ol>
+          <label className={`btn btn-block file-btn ${reading ? 'is-busy' : ''}`} aria-disabled={reading}>
+            {reading ? 'Datei wird gelesen …' : 'Hevy-CSV auswählen'}
+            <input ref={hevyInput} type="file" className="visually-hidden" disabled={reading} onChange={(e) => onHevyFile(e.target.files?.[0])} />
+          </label>
+          {message?.section === 'hevy' && (
+            <div className={`notice ${message.error ? 'notice-error' : ''}`} role={message.error ? 'alert' : 'status'}>
+              <span>{message.text}</span>
+              <button className="icon-btn" onClick={() => setMessage(null)} aria-label="Hinweis schließen">
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -160,7 +186,7 @@ export default function SettingsPage() {
       {hevyPreview && hevyStats && (
         <Dialog title="Hevy-Daten importieren?" onClose={() => setHevyPreview(null)} actions={[{ label: 'Importieren', kind: 'primary', onClick: doHevyImport }]}>
           <p>
-            {hevyStats.workouts} Trainings mit {hevyStats.sets} Sätzen
+            {hevyStats.workouts} {hevyStats.workouts === 1 ? 'Training' : 'Trainings'} mit {hevyStats.sets} {hevyStats.sets === 1 ? 'Satz' : 'Sätzen'}
             {hevyStats.from && hevyStats.to && ` (${fmtShortDate(hevyStats.from)} – ${fmtShortDate(hevyStats.to)})`}.
           </p>
           {hevyPreview.skippedRows > 0 && <p className="muted small">{hevyPreview.skippedRows} Zeilen ohne Wiederholungen (z. B. Zeit- oder Cardio-Übungen) werden übersprungen.</p>}

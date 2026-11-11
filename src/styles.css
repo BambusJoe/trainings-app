@@ -19,10 +19,17 @@
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
+  --tabbar: #141518;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* iOS-Home-Bildschirm-App mit durchsichtiger Statusleiste: Die Seite wäre sonst um die Statusleistenhöhe
+   zu kurz, und fest unten verankerte Leisten schweben mit einem Spalt über dem Bildschirmrand. */
+html {
+  min-height: calc(100% + env(safe-area-inset-top, 0px));
 }
 
 html,
@@ -684,18 +691,30 @@ button {
   margin-left: 0;
   margin-right: 0;
 }
-.bottom-stack > :last-child {
+/* Unterer Sicherheitsabstand (Home-Indikator): die Tab-Leiste füllt ihn selbst aus,
+   ohne Tab-Leiste (im Training) bekommt der Stapel den Abstand. */
+.bottom-stack:not(:has(.tabbar)) {
   padding-bottom: max(var(--safe-b), 8px);
 }
 
 .tabbar {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  background: rgba(20, 21, 24, 0.94);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: var(--tabbar);
   border-top: 1px solid var(--line);
   padding-top: 6px;
+  padding-bottom: max(var(--safe-b), 8px);
+}
+/* Verlängert die Leiste nach unten, damit nie ein Spalt zum Bildschirmrand sichtbar ist */
+.tabbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 120px;
+  background: var(--tabbar);
 }
 .tab {
   display: flex;
@@ -1161,4 +1180,38 @@ html {
     color: var(--accent-ink);
     background: #dcf866;
   }
+}
+
+/* ---------- Datei-Auswahl (Label statt verstecktem Input – zuverlässig auf iOS) ---------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  opacity: 0;
+}
+.file-btn {
+  position: relative;
+  cursor: pointer;
+}
+.file-btn:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.file-btn.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.steps {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.notice {
+  font-size: 0.9rem;
 }

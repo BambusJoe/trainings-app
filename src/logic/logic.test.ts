@@ -29,6 +29,14 @@ describe('Hevy-Import', () => {
     expect(parseHevyDate('3 Dez 2025, 07:15')).toBe(new Date(2025, 11, 3, 7, 15).getTime())
     expect(parseHevyDate('2024-03-15T18:03:00Z')).toBe(Date.parse('2024-03-15T18:03:00Z'))
     expect(parseHevyDate('kaputt')).toBeNull()
+    // weitere Formate, die Hevy je nach Version/Sprache exportiert (Safari kann einige davon nicht selbst lesen)
+    const t = new Date(2025, 2, 15, 18, 3).getTime()
+    expect(parseHevyDate('15. März 2025, 18:03')).toBe(t)
+    expect(parseHevyDate('Mar 15, 2025, 6:03 PM')).toBe(t)
+    expect(parseHevyDate('15 Mar 2025, 6:03\u202fPM')).toBe(t)
+    expect(parseHevyDate('2025-03-15 18:03:00')).toBe(t)
+    expect(parseHevyDate('15.03.2025 18:03')).toBe(t)
+    expect(parseHevyDate('Mar 15, 2025, 12:10 AM')).toBe(new Date(2025, 2, 15, 0, 10).getTime())
   })
 
   it('gruppiert Trainings und Übungen, überspringt Zeitübungen', () => {
